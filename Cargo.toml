@@ -3,6 +3,7 @@ name = "botdo"
 version = "0.1.0"
 edition = "2021"
 description = "Mint a short-lived, repo-scoped GitHub App token and run a gh command with it"
+license = "Apache-2.0"
 
 [dependencies]
 ureq = { version = "2.10", features = ["json"] }

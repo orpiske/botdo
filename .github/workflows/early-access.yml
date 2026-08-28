@@ -34,8 +34,6 @@ jobs:
             platform: macos-x86_64
           - os: macos-15
             platform: macos-aarch64
-          - os: windows-2025
-            platform: windows-x86_64
     env:
       VERSION: ${{ inputs.currentDevelopmentVersion }}
     steps:
@@ -64,38 +62,22 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked
 
-      - name: Package release binary (Unix)
-        if: runner.os != 'Windows'
+      - name: Package release binary
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
           archive="botdo-${VERSION}-${PLATFORM}"
           mkdir -p "dist/$archive"
           install -m 0755 target/release/botdo "dist/$archive/botdo"
-          cp README.md "dist/$archive/"
+          cp LICENSE README.md "dist/$archive/"
           tar -C dist -czf "dist/$archive.tar.gz" "$archive"
           rm -rf "dist/$archive"
-
-      - name: Package release binary (Windows)
-        if: runner.os == 'Windows'
-        env:
-          PLATFORM: ${{ matrix.platform }}
-        shell: pwsh
-        run: |
-          $archive = "botdo-$env:VERSION-$env:PLATFORM"
-          New-Item -ItemType Directory -Path "dist/$archive" -Force
-          Copy-Item target/release/botdo.exe "dist/$archive/botdo.exe"
-          Copy-Item README.md "dist/$archive/"
-          Compress-Archive -Path "dist/$archive" -DestinationPath "dist/$archive.zip"
-          Remove-Item -Recurse -Force "dist/$archive"
 
       - name: Upload release archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: botdo-${{ matrix.platform }}
-          path: |
-            dist/*.tar.gz
-            dist/*.zip
+          path: dist/*.tar.gz
           if-no-files-found: error
 
   publish:
@@ -117,7 +99,7 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum *.tar.gz *.zip > checksums_sha256.txt
+        run: sha256sum *.tar.gz > checksums_sha256.txt
 
       - name: Publish prerelease
         run: |
