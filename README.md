@@ -28,28 +28,54 @@ Acting as a GitHub App (instead of a personal access token) means:
 
 ## Requirements
 
-- **To build:** a Rust toolchain (`cargo`, `rustc` — install via [rustup](https://rustup.rs/)).
+- **To build:** a Rust toolchain (`cargo`, `rustc` — install via [rustup](https://rustup.rs/))
+  and `make`.
 - **At runtime:** only [`gh`](https://cli.github.com/), the GitHub CLI, needs to
   be on your `PATH`. All HTTP and crypto is handled inside the binary — no
   `curl`, `jq`, or `openssl` required.
 
-On Fedora: `sudo dnf install cargo gh`
+On Fedora: `sudo dnf install cargo make gh`
 
-## Building
+## Installing
+
+Build and install with `make`. The default install directory is
+`/usr/local/bin`, which usually needs elevated privileges:
+
+```console
+$ sudo make install
+```
+
+Install somewhere that does not require `sudo` by overriding `PREFIX` or
+`BINDIR`:
+
+```console
+$ make install PREFIX="$HOME/.local"   # installs to ~/.local/bin
+$ make install BINDIR="$HOME/bin"      # installs to a specific directory
+```
+
+Other targets:
+
+```console
+$ make            # build the release binary only
+$ make uninstall  # remove the installed binary (respects PREFIX/BINDIR)
+$ make clean      # cargo clean
+```
+
+### Building manually
 
 ```console
 $ cargo build --release
 ```
 
-The binary is produced at `target/release/botdo`. Copy it onto your
-`PATH` if you like:
+The binary is produced at `target/release/botdo`. Copy it onto your `PATH`
+yourself, e.g.:
 
 ```console
 $ install -m 755 target/release/botdo ~/.local/bin/
 ```
 
-The examples below assume `botdo` is on your `PATH`. If it is not,
-run it by its full path (e.g. `./target/release/botdo ...`).
+The examples below assume `botdo` is on your `PATH`. If it is not, run it by its
+full path (e.g. `./target/release/botdo ...`).
 
 ## Setup
 
