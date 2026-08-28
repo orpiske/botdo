@@ -10,16 +10,25 @@ set -euo pipefail
 # `gh` (or any command you pass). It does not clone, branch, commit, or push.
 #
 # Requirements:
-#   bash, curl, jq, openssl, git, gh
+#   bash, curl, jq, openssl, gh
 #
 # Required environment variables:
 #   GITHUB_APP_ID
 #   GITHUB_PRIVATE_KEY_FILE
 #
+# When GITHUB_APP_ID is not already set, configuration is loaded from an env
+# file (default: ~/.coding-bot.env, overridable via CODING_BOT_ENV). The file is
+# a plain shell snippet, e.g.:
+#   GITHUB_APP_ID=123456
+#   GITHUB_PRIVATE_KEY_FILE=/home/me/my-app.private-key.pem
+#
+# The target repository (used to scope the installation token) is read from the
+# `-R`/`--repo` flag in the gh command. If that flag is absent, it falls back to
+# the GH_REPO or GITHUB_REPOSITORY environment variable.
+#
 # Optional environment variables:
-#   GH_REPO / GITHUB_REPOSITORY  target repository in OWNER/REPO form.
-#                                If unset, it is derived from the origin
-#                                remote of the current git checkout.
+#   GH_REPO / GITHUB_REPOSITORY  target repository in OWNER/REPO form, used when
+#                                the gh command does not pass -R/--repo.
 #   GITHUB_API_URL               default: https://api.github.com
 #   GITHUB_API_VERSION           default: 2026-03-10
 #
@@ -40,14 +49,47 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
-for cmd in curl jq openssl git base64; do
+for cmd in curl jq openssl base64; do
   require_cmd "$cmd"
 done
 
+# Load configuration from an env file when GITHUB_APP_ID is not already set in
+# the environment. The path is overridable via CODING_BOT_ENV.
+CODING_BOT_ENV="${CODING_BOT_ENV:-$HOME/.coding-bot.env}"
+if [[ -z "${GITHUB_APP_ID:-}" && -f "$CODING_BOT_ENV" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$CODING_BOT_ENV"
+  set +a
+fi
+
 [[ $# -ge 1 ]] || die "usage: $0 gh <args...>"
 
-# Determine the repository the installation token should be scoped to.
+# Determine the repository the installation token should be scoped to. It is
+# taken from the -R/--repo flag in the gh command, falling back to the
+# GH_REPO / GITHUB_REPOSITORY environment variables.
 detect_repo() {
+  local prev=""
+  for arg in "$@"; do
+    case "$prev" in
+      -R|--repo)
+        printf '%s\n' "$arg"
+        return 0
+        ;;
+    esac
+    case "$arg" in
+      --repo=*)
+        printf '%s\n' "${arg#--repo=}"
+        return 0
+        ;;
+      -R?*)
+        printf '%s\n' "${arg#-R}"
+        return 0
+        ;;
+    esac
+    prev="$arg"
+  done
+
   if [[ -n "${GH_REPO:-}" ]]; then
     printf '%s\n' "$GH_REPO"
     return 0
@@ -56,19 +98,11 @@ detect_repo() {
     printf '%s\n' "$GITHUB_REPOSITORY"
     return 0
   fi
-
-  local url
-  url="$(git remote get-url origin 2>/dev/null)" || return 1
-  url="${url%.git}"
-  url="${url#git@github.com:}"
-  url="${url#ssh://git@github.com/}"
-  url="${url#https://github.com/}"
-  url="${url#git://github.com/}"
-  printf '%s\n' "$url"
+  return 1
 }
 
-REPO_SLUG="$(detect_repo)" \
-  || die "could not determine repository; set GH_REPO or run inside a git checkout"
+REPO_SLUG="$(detect_repo "$@")" \
+  || die "could not determine repository; pass -R OWNER/REPO to gh or set GH_REPO"
 
 [[ "$REPO_SLUG" == */* ]] || die "repository must be in OWNER/REPO form (got: ${REPO_SLUG})"
 
