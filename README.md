@@ -1,4 +1,4 @@
-# coding-bot-wrapper
+# botdo
 
 A thin wrapper that authenticates as a **GitHub App**, mints a short-lived,
 repository-scoped **installation token**, and then runs your `gh` command with
@@ -8,8 +8,10 @@ It does *one* thing: negotiate the token and hand off to `gh`. It does not
 clone, branch, commit, push, or open pull requests — you drive all of that
 through normal `gh` (and `git`) commands.
 
+It is written in Rust and ships as a single self-contained binary.
+
 ```console
-$ ./coding-bot-wrapper.sh gh pr comment 123 --body 'Automated review comment' -R my-org/my-repo
+$ botdo gh pr comment 123 --body 'Automated review comment' -R my-org/my-repo
 Finding GitHub App installation for my-org/my-repo...
 Installation token acquired; expires at 2026-08-28T12:34:56Z.
 https://github.com/my-org/my-repo/issues/123#issuecomment-...
@@ -26,15 +28,28 @@ Acting as a GitHub App (instead of a personal access token) means:
 
 ## Requirements
 
-Install these and make sure they are on your `PATH`:
+- **To build:** a Rust toolchain (`cargo`, `rustc` — install via [rustup](https://rustup.rs/)).
+- **At runtime:** only [`gh`](https://cli.github.com/), the GitHub CLI, needs to
+  be on your `PATH`. All HTTP and crypto is handled inside the binary — no
+  `curl`, `jq`, or `openssl` required.
 
-- `bash`
-- `curl`
-- `jq`
-- `openssl`
-- `gh` ([GitHub CLI](https://cli.github.com/))
+On Fedora: `sudo dnf install cargo gh`
 
-On Fedora: `sudo dnf install bash curl jq openssl gh`
+## Building
+
+```console
+$ cargo build --release
+```
+
+The binary is produced at `target/release/botdo`. Copy it onto your
+`PATH` if you like:
+
+```console
+$ install -m 755 target/release/botdo ~/.local/bin/
+```
+
+The examples below assume `botdo` is on your `PATH`. If it is not,
+run it by its full path (e.g. `./target/release/botdo ...`).
 
 ## Setup
 
@@ -82,12 +97,14 @@ The wrapper needs two values:
 You can provide these two ways.
 
 **Option A — env file (recommended).** If `GITHUB_APP_ID` is not already set in
-your environment, the wrapper reads `~/.coding-bot.env` (override the path with
-`CODING_BOT_ENV`). It is sourced as a shell snippet, so keep it to simple
-`KEY=value` lines:
+your environment, the wrapper reads `~/.botdo.env` (override the path with
+`BOTDO_ENV`). It is parsed as simple `KEY=value` lines — blank lines and
+`#` comments are ignored, an optional leading `export ` is accepted, and
+surrounding quotes are stripped. Values already present in the environment are
+never overwritten.
 
 ```sh
-# ~/.coding-bot.env
+# ~/.botdo.env
 GITHUB_APP_ID=123456
 GITHUB_PRIVATE_KEY_FILE=/home/opiske/my-app.private-key.pem
 ```
@@ -95,7 +112,7 @@ GITHUB_PRIVATE_KEY_FILE=/home/opiske/my-app.private-key.pem
 Lock it down — it points at your private key:
 
 ```console
-$ chmod 600 ~/.coding-bot.env
+$ chmod 600 ~/.botdo.env
 ```
 
 **Option B — inline environment variables.** Explicitly set variables always
@@ -104,16 +121,16 @@ win over the env file:
 ```console
 $ GITHUB_APP_ID=123456 \
   GITHUB_PRIVATE_KEY_FILE=~/my-app.private-key.pem \
-  ./coding-bot-wrapper.sh gh pr list -R my-org/my-repo
+  botdo gh pr list -R my-org/my-repo
 ```
 
 ## Usage
 
 ```
-./coding-bot-wrapper.sh gh <args...>
+botdo gh <args...>
 ```
 
-Everything after the script name is passed to `gh` untouched. Before it runs,
+Everything after the binary name is passed to `gh` untouched. Before it runs,
 the wrapper exports:
 
 - `GH_TOKEN` — the installation token that authenticates `gh`
@@ -137,19 +154,19 @@ the recommended, explicit approach.
 Comment on a PR:
 
 ```console
-$ ./coding-bot-wrapper.sh gh pr comment 123 --body 'Looks good to me' -R my-org/my-repo
+$ botdo gh pr comment 123 --body 'Looks good to me' -R my-org/my-repo
 ```
 
 List open PRs (repo via env var instead of `-R`):
 
 ```console
-$ GH_REPO=my-org/my-repo ./coding-bot-wrapper.sh gh pr list
+$ GH_REPO=my-org/my-repo botdo gh pr list
 ```
 
 Create an issue:
 
 ```console
-$ ./coding-bot-wrapper.sh gh issue create \
+$ botdo gh issue create \
     --title 'Automated report' --body 'Details...' -R my-org/my-repo
 ```
 
@@ -157,7 +174,7 @@ $ ./coding-bot-wrapper.sh gh issue create \
 
 | Variable             | Default                     | Purpose                                             |
 | -------------------- | --------------------------- | --------------------------------------------------- |
-| `CODING_BOT_ENV`     | `~/.coding-bot.env`         | Path to the env file                                |
+| `BOTDO_ENV`          | `~/.botdo.env`              | Path to the env file                                |
 | `GH_REPO`            | *(none)*                    | Target repo when `-R`/`--repo` is not passed        |
 | `GITHUB_REPOSITORY`  | *(none)*                    | Same, checked after `GH_REPO`                        |
 | `GITHUB_API_URL`     | `https://api.github.com`    | API base URL (set for GitHub Enterprise Server)     |
@@ -178,18 +195,19 @@ stays clean for piping.
 
 ## Security notes
 
-- Keep the private key and `~/.coding-bot.env` at mode `600`.
+- Keep the private key and `~/.botdo.env` at mode `600`.
 - Never commit the `.pem` or the env file to a repository.
 - The minted token is repo-scoped and expires within ~1 hour; you cannot grant
   it more than the App installation already has.
 
 ## Troubleshooting
 
-| Message                                             | Likely cause / fix                                                        |
-| --------------------------------------------------- | ------------------------------------------------------------------------- |
-| `required command not found: <cmd>`                 | Install the missing dependency.                                           |
-| `could not determine repository; pass -R ...`       | Add `-R owner/repo` to the `gh` command, or set `GH_REPO`.                |
-| `Set GITHUB_APP_ID` / `Set GITHUB_PRIVATE_KEY_FILE` | Add them to `~/.coding-bot.env` or export them inline.                     |
-| `private key not found: ...`                        | Fix `GITHUB_PRIVATE_KEY_FILE` to point at the real `.pem`.                |
-| `could not determine installation ID`               | The App is not installed on that repo (see setup step 3).                 |
-| `GitHub did not return an installation access token` | The App lacks a permission, or the key/App ID don't match. Check the App.|
+| Message                                             | Likely cause / fix                                                          |
+| --------------------------------------------------- | -------------------------------------------------------------------------- |
+| `could not determine repository; pass -R ...`       | Add `-R owner/repo` to the `gh` command, or set `GH_REPO`.                  |
+| `Set GITHUB_APP_ID` / `Set GITHUB_PRIVATE_KEY_FILE` | Add them to `~/.botdo.env` or export them inline.                      |
+| `private key not found: ...`                        | Fix `GITHUB_PRIVATE_KEY_FILE` to point at the real `.pem`.                  |
+| `invalid RSA private key: ...`                      | The file is not a valid RSA PEM key; re-download it from the App page.      |
+| `GitHub API returned HTTP 404: ...`                 | The App is not installed on that repo (see setup step 3).                   |
+| `GitHub API returned HTTP 401: ...`                 | The key/App ID don't match, or the JWT is invalid. Check both values.      |
+| `failed to run gh: ...`                             | `gh` is not installed or not on your `PATH`.                                |
